@@ -1,9 +1,36 @@
 #!/usr/bin/env bash
 
-PWM="/sys/class/hwmon/hwmon6/pwm1"
-ENABLE="/sys/class/hwmon/hwmon6/pwm1_enable"
-RPM="/sys/class/hwmon/hwmon6/fan1_input"
-CPU_TEMP="/sys/class/hwmon/hwmon6/temp1_input"
+HWMON_NAME="dell_smm"
+
+# ---------------------------------------------------------------------------
+# Locate the hwmon directory by device name (hwmonN index is not stable).
+# ---------------------------------------------------------------------------
+find_hwmon() {
+    local d
+    for d in /sys/class/hwmon/hwmon*; do
+        [[ -d "$d" ]] || continue
+        if [[ "$(cat "$d/name" 2>/dev/null)" == "$HWMON_NAME" ]]; then
+            echo "$d"
+            return 0
+        fi
+    done
+    return 1
+}
+
+HWMON_DIR=$(find_hwmon) || {
+    echo "ERROR: hwmon device '$HWMON_NAME' not found." >&2
+    echo "Available hwmon devices:" >&2
+    for d in /sys/class/hwmon/hwmon*; do
+        [[ -d "$d" ]] || continue
+        printf '  %s -> %s\n' "$d" "$(cat "$d/name" 2>/dev/null)" >&2
+    done
+    exit 1
+}
+
+PWM="$HWMON_DIR/pwm1"
+ENABLE="$HWMON_DIR/pwm1_enable"
+RPM="$HWMON_DIR/fan1_input"
+CPU_TEMP="$HWMON_DIR/temp1_input"
 
 case "$1" in
     auto)
