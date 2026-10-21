@@ -25,7 +25,7 @@ If you've tried out the standalone bash script and you like what you see (i.e. y
     $ cd inspiron-5645-fan/systemd-daemon
     $ sudo make install
 
-When you install, the following files will be exist in the following directories:
+When you install, the following files will be copied to the following directories:
 
 |Filename| Directory  |
 |--|--|
