@@ -1,0 +1,11 @@
+[Unit]
+Description=Dell Inspiron 16 5645 fan control service
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/fan-control-daemon
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# Script to send commands to the fan-control-daemon.
+
+SOCKET="/run/fan-control.sock"
+
+case "$1" in
+    auto)
+        printf 'auto\n\n' | socat - UNIX-CONNECT:"$SOCKET"
+        ;;
+
+    status)
+        printf 'status\n\n' | socat - UNIX-CONNECT:"$SOCKET"
+        ;;
+
+    ''|*[!0-9]*)
+        echo "Usage: fan {0-255|auto|status}"
+        exit 1
+        ;;
+
+    *)
+        if (( "$1" > 255 )); then
+            echo "PWM must be between 0 and 255"
+            exit 1
+        fi
+
+        printf 'set %s\n\n' "$1" | socat - UNIX-CONNECT:"$SOCKET"
+        ;;
+esac
+

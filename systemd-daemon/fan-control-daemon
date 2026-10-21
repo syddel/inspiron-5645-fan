@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+#
+# fan-control-daemon
+#
+# Runs as root (via systemd). Listens on a Unix socket and executes
+# fan-control commands on behalf of unprivileged clients.
+#
+# Protocol: newline-separated lines on stdin:
+#     set <0-255>
+#     auto
+#     status
+#
+
+set -u
+
+SOCKET="/run/fan-control.sock"
+HWMON_NAME="dell_smm"
+
+# ---------------------------------------------------------------------------
+# Locate the hwmon directory for the Dell fan controller.
+# The hwmonN index is not stable across reboots, so match on the device name.
+# ---------------------------------------------------------------------------
+find_hwmon() {
+    local d
+    for d in /sys/class/hwmon/hwmon*; do
+        [[ -d "$d" ]] || continue
+        if [[ "$(cat "$d/name" 2>/dev/null)" == "$HWMON_NAME" ]]; then
+            echo "$d"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# ---------------------------------------------------------------------------
+# Handler mode: invoked by socat once per client connection.
+# ---------------------------------------------------------------------------
+if [[ "${1:-}" == "handle" ]]; then
+    read -r command value || true
+
+    HWMON_DIR=$(find_hwmon) || {
+        echo "ERROR: could not find hwmon device '$HWMON_NAME'"
+        exit 0
+    }
+
+    PWM="$HWMON_DIR/pwm1"
+    ENABLE="$HWMON_DIR/pwm1_enable"
+    RPM="$HWMON_DIR/fan1_input"
+    CPU_TEMP="$HWMON_DIR/temp1_input"
+
+    case "$command" in
+        set)
+            if [[ "$value" =~ ^[0-9]+$ ]] && (( value <= 255 )); then
+                echo 1 > "$ENABLE"
+                echo "$value" > "$PWM"
+                echo "Fan PWM: $value"
+            else
+                echo "ERROR: PWM must be between 0 and 255"
+            fi
+            ;;
+
+        auto)
+            echo 2 > "$ENABLE"
+            echo "Fan control: automatic"
+            ;;
+
+        status)
+            if [[ ! -r "$ENABLE" ]]; then
+                echo "ERROR: fan controller not available"
+                exit 0
+            fi
+
+            state=$(cat "$ENABLE")
+
+            if [[ "$state" == "1" ]]; then
+                status="manual"
+                current_pwm=$(cat "$PWM")
+            else
+                status="automatic"
+                current_pwm="N/A"
+            fi
+
+            rpm=$(cat "$RPM")
+            temp=$(( $(cat "$CPU_TEMP") / 1000 ))
+
+            echo "Status: $status"
+            echo "PWM: $current_pwm"
+            echo "Current RPM: $rpm"
+            echo "CPU Temperature: ${temp}°C"
+            ;;
+
+        *)
+            echo "ERROR: Unknown command"
+            ;;
+    esac
+
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Daemon mode (default): create the socket and serve clients.
+# ---------------------------------------------------------------------------
+
+# Make sure we can even find the controller before advertising the socket.
+if ! HWMON_DIR=$(find_hwmon); then
+    echo "fan-control-daemon: hwmon device '$HWMON_NAME' not found" >&2
+    exit 1
+fi
+
+ENABLE="$HWMON_DIR/pwm1_enable"
+
+cleanup() {
+    # Best-effort: restore automatic fan control and remove the socket.
+    echo 2 > "$ENABLE" 2>/dev/null || true
+    rm -f "$SOCKET"
+}
+trap cleanup EXIT INT TERM
+
+rm -f "$SOCKET"
+
+# mode=0666 lets any local user connect. `fork` handles one client per
+# connection. No user=/group= is given so the socket is owned by root:root;
+# only the mode controls who can reach it.
+exec socat UNIX-LISTEN:"$SOCKET",fork,mode=0666 EXEC:"$0 handle"
+
