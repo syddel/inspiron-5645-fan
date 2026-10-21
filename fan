@@ -1,4 +1,4 @@
-!/usr/bin/env bash
+#!/usr/bin/env bash
 
 PWM="/sys/class/hwmon/hwmon6/pwm1"
 ENABLE="/sys/class/hwmon/hwmon6/pwm1_enable"
